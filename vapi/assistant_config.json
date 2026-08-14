@@ -24,7 +24,7 @@
           }
         },
         "server": {
-          "url": "https://YOUR_DEPLOYED_API_URL/patients/lookup/by-phone/{phone_number}",
+          "url": "https://ai-voice-assistant-c2x0.onrender.com/patients/lookup/by-phone/{phone_number}",
           "method": "GET"
         }
       },
@@ -60,7 +60,7 @@
           }
         },
         "server": {
-          "url": "https://YOUR_DEPLOYED_API_URL/patients",
+          "url": "https://ai-voice-assistant-c2x0.onrender.com/patients",
           "method": "POST"
         }
       },
@@ -94,7 +94,7 @@
           }
         },
         "server": {
-          "url": "https://YOUR_DEPLOYED_API_URL/patients/{patient_id}",
+          "url": "https://ai-voice-assistant-c2x0.onrender.com/patients/{patient_id}",
           "method": "PUT"
         }
       }
@@ -114,5 +114,5 @@
   "silenceTimeoutSeconds": 20,
   "maxDurationSeconds": 900,
   "backgroundSound": "office",
-  "notes": "Replace YOUR_DEPLOYED_API_URL with your live API base URL before creating this assistant in the Vapi dashboard. systemPromptFile is a placeholder — paste the contents of system_prompt.md directly into the Vapi dashboard's system prompt field, or reference it via the Vapi API's messages array."
+  "notes": "The API tools use the deployed Render API at https://ai-voice-assistant-c2x0.onrender.com. The three tools are configured in the Vapi dashboard and attached to the Patient Intake Agent. systemPromptFile is a repository reference; the system prompt is configured directly in the Vapi dashboard."
 }
