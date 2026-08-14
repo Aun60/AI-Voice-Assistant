@@ -3,7 +3,7 @@
   "firstMessage": "Hi, thanks for calling! I'm Alex, and I'll help get you registered as a new patient today. Could I start with your full name?",
   "model": {
     "provider": "openai",
-    "model": "gpt-4o",
+    "model": "gpt-4.1",
     "temperature": 0.4,
     "systemPromptFile": "system_prompt.md",
     "tools": [
