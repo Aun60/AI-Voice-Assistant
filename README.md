@@ -3,6 +3,17 @@
 A phone-based intake agent that conversationally registers new patients and persists them to a
 database via a REST API.
 
+## Live demo
+
+- **Phone number:** +1 (434) 372-9130
+- **API base URL:** https://ai-voice-assistant-c2x0.onrender.com
+- **API docs:** https://ai-voice-assistant-c2x0.onrender.com/docs
+
+Note: the API is hosted on Render's free tier, which spins down after 15 minutes of inactivity.
+The first request after idle time takes 30-50 seconds to wake the service — if the first call of
+a review session has an unusually long pause before Alex responds, this is why. Calling `/health`
+a minute before testing warms it up.
+
 ## Architecture
 
 ```
@@ -19,12 +30,13 @@ Caller ↔ Vapi (telephony + STT/TTS + LLM orchestration)
 - **Backend: FastAPI.** Chosen for fast iteration, built-in request validation via Pydantic, and
   automatic OpenAPI docs — useful both for testing and as a natural fit for Vapi's tool-calling
   (each tool is just an HTTP call to one of these endpoints).
-- **Database: SQLite via SQLAlchemy.** Zero setup, file-based persistence, good enough for the
-  scope of this assessment. The engine is swappable — set `DATABASE_URL` to a Postgres URL and it
-  works unchanged (see `app/database.py`). On a platform with an ephemeral filesystem (e.g. plain
-  Vercel serverless), the SQLite file will NOT persist — deploy to a host with a persistent disk
-  (Railway, Fly.io with a volume, Render with a persistent disk, or a VM), or point
-  `DATABASE_URL` at a hosted Postgres instance (e.g. Railway/Supabase Postgres).
+- **Database: PostgreSQL (Render free instance) via SQLAlchemy.** The code defaults to local
+  SQLite for zero-setup local dev (see `app/database.py`), but the deployed instance runs against
+  Render's free Postgres, set via the `DATABASE_URL` environment variable — no code changes were
+  needed to switch engines. This was a deliberate choice over SQLite-on-Render: Render's free web
+  service tier has an ephemeral filesystem (no persistent disk on the free tier), so a SQLite file
+  there would be wiped on every restart/redeploy, breaking the assessment's core persistence
+  requirement. Postgres lives outside the web service's filesystem and survives restarts.
 - **Voice agent ↔ database integration**: Vapi's tool calls hit the REST API directly over HTTPS
   (`lookup_patient_by_phone`, `create_patient`, `update_patient`). There's no separate service
   layer — the API *is* the integration point, which keeps validation in one place and makes the
@@ -46,48 +58,60 @@ seed.py         Optional: inserts 2 demo patients
 requirements.txt
 ```
 
-## Setup
+## Local setup
 
 ```bash
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python seed.py          # optional: adds 2 demo patients
+python seed.py          # optional: adds 2 demo patients (uses local SQLite by default)
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-API is now live at `http://localhost:8000`. Interactive docs at `/docs`.
-
-For a public HTTPS URL Vapi can reach (local dev):
-```bash
-ngrok http 8000
-```
+API is now live at `http://localhost:8000`. Interactive docs at `/docs`. This runs against a
+local SQLite file by default — no environment variables needed for local dev.
 
 ### Environment variables
 
-| Variable       | Required | Default                 | Notes                                      |
-|----------------|----------|--------------------------|---------------------------------------------|
-| `DATABASE_URL` | No       | `sqlite:///./patients.db`| Set to a Postgres URL for production use.  |
+| Variable       | Required | Default                   | Notes                                          |
+|----------------|----------|-----------------------------|-------------------------------------------------|
+| `DATABASE_URL` | No       | `sqlite:///./patients.db`   | Set to a Postgres URL to use Postgres instead. |
 
 No API keys live in this repo. Vapi and the LLM provider keys are configured in the Vapi
 dashboard, not in this codebase — the API itself has no third-party credentials to leak.
+`runtime.txt` pins the Python version for deployment (3.11.9) since some dependencies don't yet
+ship prebuilt wheels for newer Python versions.
 
-### Deployment (Railway example)
+### Deployment (as actually deployed: Render + Render Postgres)
 
 1. Push this repo to GitHub.
-2. Create a new Railway project from the repo, add a persistent volume mounted where
-   `patients.db` will live (or attach Railway Postgres and set `DATABASE_URL`).
-3. Set the start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
-4. Note the deployed URL, e.g. `https://your-app.up.railway.app`.
+2. Create a free PostgreSQL instance on Render, copy its Internal Database URL.
+3. Create a Render Web Service from the GitHub repo. Build command: `pip install -r
+   requirements.txt`. Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+4. In the Web Service's Environment tab, set `DATABASE_URL` to the Internal Database URL from
+   step 2. This triggers a redeploy.
+5. Once live, seed the database by creating a patient or two via `/docs` on the deployed URL
+   (there's no shell access on Render's free tier to run `seed.py` directly).
 
-### Wiring up Vapi
+Note: Render's free web service tier spins down after 15 minutes idle (see "Live demo" above for
+the wake-time trade-off this introduces).
 
-1. Create a Vapi account, provision a phone number.
-2. Create a new assistant. Paste the contents of `vapi/system_prompt.md` as the system prompt.
-3. In `vapi/assistant_config.json`, replace every `YOUR_DEPLOYED_API_URL` with your deployed API
-   base URL, then create the three tools (`lookup_patient_by_phone`, `create_patient`,
-   `update_patient`) in the Vapi dashboard using that JSON as reference (model, voice, and
-   transcriber settings included).
-4. Attach the assistant to the phone number. Call it.
+### Wiring up Vapi (as actually configured)
+
+1. Create a Vapi account, provision a phone number (this project uses a free Vapi-provided US
+   number, no separate Twilio account).
+2. Create a new assistant ("Patient Intake Agent"). Paste the contents of `vapi/system_prompt.md`
+   as the system prompt.
+3. Model: GPT-4.1 (GPT-4o was unavailable in the dashboard at build time; GPT-4.1 was used instead
+   for its comparable tool-calling reliability). Voice: ElevenLabs. Transcriber: Deepgram nova-2,
+   en-US.
+4. Create the three tools (`lookup_patient_by_phone`, `create_patient`, `update_patient`) using
+   `vapi/assistant_config.json` as the parameter/schema reference, pointing each tool's URL at the
+   deployed Render API base URL. Attach all three tools to the assistant.
+5. Attach the assistant to the phone number. The phone number's own "Server URL" field is left
+   empty deliberately — that field is for call-lifecycle webhooks (e.g. call-started/call-ended
+   events sent to a separate server), which this project doesn't use. All persistence happens
+   through the three tool calls above, not through a phone-number-level webhook.
+6. Call it.
 
 ## API reference
 
